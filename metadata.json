@@ -1,0 +1,9 @@
+{
+  "name": "VaultSpace AI ",
+  "description": "Military-grade secure storage and AI-powered intelligence for your family, personal, and critical documents.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": []
+}
