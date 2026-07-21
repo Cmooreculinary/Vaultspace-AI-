@@ -36,7 +36,7 @@ const Landing: React.FC<LandingProps> = ({ onEnter }) => {
   }, []);
 
   const handleSecuritySpecs = () => {
-    alert("VaultSpace Security Protocols:\n- On-device encryption (AES-256)\n- Web Authentication API (FIDO2/Passkey) multi-factor\n- Zero-knowledge synchronization\n\nAccess the secure tactical profile by entering the vault.");
+    alert("VaultSpace deployment demo:\n- Data remains in this browser's local storage\n- Passkey screens demonstrate the intended workflow\n- No production encryption, identity service, or cloud synchronization is connected\n\nDo not store sensitive information in this demo.");
   };
 
   const handleSkipAndUse = () => {
@@ -80,8 +80,8 @@ const Landing: React.FC<LandingProps> = ({ onEnter }) => {
       {/* Top Banner */}
       <div className="w-full flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Shield className="size-4 text-[#ffc107] animate-pulse" />
-          <span className="text-[9px] font-black uppercase text-slate-500 tracking-[0.25em] font-mono">Secured Enclave Protocol</span>
+          <ShieldAlert className="size-4 text-[#ffc107]" />
+          <span className="text-[9px] font-black uppercase text-[#ffc107] tracking-[0.2em] font-mono">Demo mode - browser-local data only</span>
         </div>
         <button 
           onClick={handleSkipAndUse}
@@ -113,7 +113,10 @@ const Landing: React.FC<LandingProps> = ({ onEnter }) => {
             VaultSpace
           </h1>
           <p className="text-[#ffc107] text-xs font-black tracking-[0.3em] uppercase">
-            Secure. Smart. Simple.
+            Deployment Prototype
+          </p>
+          <p className="mx-auto max-w-sm text-[10px] font-semibold leading-relaxed text-slate-400">
+            Do not store sensitive information. Production encryption, identity, and cloud synchronization are not connected.
           </p>
           {isLockedDown && (
             <div className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1 bg-red-950/40 border border-red-500/20 rounded-full text-[9px] font-mono font-bold text-red-400 uppercase tracking-wider animate-pulse">

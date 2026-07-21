@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: Vaultspace-AI
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22.22.0"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
