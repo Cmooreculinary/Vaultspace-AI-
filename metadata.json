@@ -1,6 +1,6 @@
 {
-  "name": "VaultSpace AI ",
-  "description": "Military-grade secure storage and AI-powered intelligence for your family, personal, and critical documents.",
+  "name": "VaultSpace Browser Prototype",
+  "description": "Browser-local interface prototype with static sample records. No production security, identity, AI, cloud sync, or backup service is connected.",
   "requestFramePermissions": [
     "microphone",
     "camera"

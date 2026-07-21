@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { 
   getAlerts, 
   saveAlerts, 
-  getEncryptedBackupInfo, 
+  getLocalStorageInfo,
+  LocalStorageInfo,
   AlertItem, 
   createAlert 
 } from '../utils/alertStorage';
@@ -17,11 +18,7 @@ import {
   Calendar, 
   Clock, 
   Database, 
-  Lock, 
-  Cpu, 
   Plus, 
-  Archive, 
-  ExternalLink,
   ChevronRight,
   ShieldCheck
 } from 'lucide-react';
@@ -32,8 +29,7 @@ const AlertDetail: React.FC = () => {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [selectedAlertId, setSelectedAlertId] = useState<string>('');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [backupInfo, setBackupInfo] = useState<any>(null);
-  const [showBackupCipher, setShowBackupCipher] = useState(false);
+  const [storageInfo, setStorageInfo] = useState<LocalStorageInfo | null>(null);
   
   // Form state for manual quick alert entry
   const [showAddForm, setShowAddForm] = useState(false);
@@ -45,10 +41,10 @@ const AlertDetail: React.FC = () => {
   const loadAlertData = () => {
     const list = getAlerts();
     setAlerts(list);
-    setBackupInfo(getEncryptedBackupInfo());
-    if (list.length > 0 && !selectedAlertId) {
-      setSelectedAlertId(list[0].id);
-    }
+    setStorageInfo(getLocalStorageInfo());
+    setSelectedAlertId((current) => (
+      current && list.some((item) => item.id === current) ? current : list[0]?.id ?? ''
+    ));
   };
 
   useEffect(() => {
@@ -72,7 +68,7 @@ const AlertDetail: React.FC = () => {
         const nextState = !item.isCompleted;
         addAuditLog(
           nextState ? 'Alert Marked Completed' : 'Alert Restored',
-          `Task: "${item.title}" status changed. Enclave synced.`,
+          `Task: "${item.title}" status changed in browser-local storage.`,
           nextState ? 'success' : 'info'
         );
         return { ...item, isCompleted: nextState };
@@ -81,7 +77,7 @@ const AlertDetail: React.FC = () => {
     });
     setAlerts(updated);
     saveAlerts(updated);
-    triggerAction("STATUS LEDGER UPDATED");
+    triggerAction("LOCAL TASK STATUS UPDATED");
   };
 
   const handleDeleteAlert = (id: string, e: React.MouseEvent) => {
@@ -101,7 +97,7 @@ const AlertDetail: React.FC = () => {
       if (selectedAlertId === id) {
         setSelectedAlertId(updated[0]?.id || '');
       }
-      triggerAction("ITEM REMOVED & CRYPTO ROTATED");
+      triggerAction("LOCAL ITEM REMOVED");
     }
   };
 
@@ -109,7 +105,7 @@ const AlertDetail: React.FC = () => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    createAlert(newTitle, newDesc || 'Manually authorized task entry.', newUrgency, newCategory);
+    createAlert(newTitle, newDesc || 'Manually created demo task.', newUrgency, newCategory);
     
     // reset form
     setNewTitle('');
@@ -145,7 +141,7 @@ const AlertDetail: React.FC = () => {
         <h2 className="text-xs font-black uppercase tracking-[0.25em] text-slate-300">Maestro Proactive Hub</h2>
         <button 
           onClick={() => setShowAddForm(!showAddForm)}
-          className="size-11 flex items-center justify-center rounded-2xl bg-primary hover:bg-blue-600 transition-all text-white active:scale-95"
+          className="size-11 flex items-center justify-center rounded-2xl bg-primary hover:bg-orange-500 transition-all text-black active:scale-95"
           title="Add New Alert"
         >
           <Plus className="size-5" />
@@ -156,7 +152,7 @@ const AlertDetail: React.FC = () => {
       {showAddForm && (
         <div className="p-4 bg-slate-900 border-b border-slate-800 animate-in slide-in-from-top duration-300">
           <form onSubmit={handleCreateManualAlert} className="space-y-4 max-w-sm mx-auto">
-            <h4 className="text-[10px] font-black uppercase text-primary tracking-widest">Register New Secure Alert</h4>
+            <h4 className="text-[10px] font-black uppercase text-primary tracking-widest">Create Browser-Local Alert</h4>
             
             <div className="space-y-1">
               <label className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Title / Reminder</label>
@@ -185,7 +181,7 @@ const AlertDetail: React.FC = () => {
                 <label className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Urgency</label>
                 <select 
                   value={newUrgency} 
-                  onChange={e => setNewUrgency(e.target.value as any)}
+                  onChange={(event) => setNewUrgency(event.target.value as AlertItem['urgency'])}
                   className="w-full h-10 bg-black border border-slate-800 rounded-xl px-2 text-xs text-slate-300"
                 >
                   <option value="low">Low Priority</option>
@@ -209,9 +205,9 @@ const AlertDetail: React.FC = () => {
             <div className="flex gap-2 pt-2">
               <button 
                 type="submit" 
-                className="flex-1 h-10 bg-primary hover:bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-wider text-white"
+                className="flex-1 h-10 bg-primary hover:bg-orange-500 rounded-xl text-[10px] font-black uppercase tracking-wider text-black"
               >
-                Spawn Alert
+              Save Alert
               </button>
               <button 
                 type="button" 
@@ -230,7 +226,7 @@ const AlertDetail: React.FC = () => {
         {/* Dynamic Alerts List Scroller */}
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Active Alert Ledger</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Browser-Local Alerts</h3>
             <span className="text-[9px] font-mono font-bold text-slate-400">COUNT: {alerts.length}</span>
           </div>
 
@@ -239,9 +235,18 @@ const AlertDetail: React.FC = () => {
               alerts.map((item) => {
                 const isActive = item.id === selectedAlertId;
                 return (
-                  <button
+                  <article
                     key={item.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedAlertId(item.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedAlertId(item.id);
+                      }
+                    }}
+                    aria-pressed={isActive}
                     className={`p-4 rounded-3xl border text-left min-w-[200px] max-w-[220px] shrink-0 transition-all relative ${
                       isActive 
                         ? 'bg-primary border-primary text-white shadow-xl shadow-primary/10' 
@@ -259,12 +264,12 @@ const AlertDetail: React.FC = () => {
                         {item.category}
                       </span>
                       {item.isCompleted && (
-                        <ShieldCheck className="size-3.5 text-emerald-400 shrink-0" />
+                        <ShieldCheck className="size-3.5 text-primary shrink-0" />
                       )}
                     </div>
                     
                     <h4 className="font-black text-xs uppercase tracking-tight line-clamp-1">{item.title}</h4>
-                    <p className={`text-[10px] mt-1 line-clamp-2 ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>
+                    <p className={`text-[10px] mt-1 line-clamp-2 ${isActive ? 'text-white/80' : 'text-slate-500'}`}>
                       {item.description}
                     </p>
 
@@ -272,13 +277,13 @@ const AlertDetail: React.FC = () => {
                       <span className="text-[8px] font-mono opacity-80">{item.time}</span>
                       <button 
                         onClick={(e) => handleDeleteAlert(item.id, e)}
-                        className={`p-1.5 rounded-lg transition-colors ${isActive ? 'hover:bg-white/10 text-blue-100' : 'hover:bg-slate-900 text-slate-650 hover:text-red-400'}`}
+                        className={`p-1.5 rounded-lg transition-colors ${isActive ? 'hover:bg-white/10 text-white/80' : 'hover:bg-slate-900 text-slate-650 hover:text-red-400'}`}
                         title="Delete Alert"
                       >
                         <Trash2 className="size-3" />
                       </button>
                     </div>
-                  </button>
+                  </article>
                 );
               })
             ) : (
@@ -295,14 +300,14 @@ const AlertDetail: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center gap-2 px-1">
               <span className="size-2 rounded-full bg-primary"></span>
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Security Item Details</h3>
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Alert Details</h3>
             </div>
 
             <div className={`rounded-3xl overflow-hidden bg-card-dark border border-slate-805 shadow-2xl transition-all duration-300 ${selectedAlert.isCompleted ? 'opacity-65 grayscale' : ''}`}>
               
               {/* Dynamic Header Image Seeded by ID */}
-              <div className="h-44 relative bg-cover bg-center" style={{backgroundImage: `url('https://picsum.photos/seed/${selectedAlert.id}/800/600')`}}>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent"></div>
+              <div className="h-32 relative bg-[linear-gradient(135deg,#1E1E1E_0%,#0D0D0D_65%,#261208_100%)] border-b border-[#2A2A2A]">
+                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_80%_20%,#EC5B13_0,transparent_35%)]"></div>
                 <div className="absolute bottom-4 left-4">
                   <span className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-lg ring-1 ring-white/20 ${
                     selectedAlert.urgency === 'high' ? 'bg-red-500 text-white' : 'bg-slate-900 text-slate-300'
@@ -338,8 +343,8 @@ const AlertDetail: React.FC = () => {
 
                 {/* Cyberpunk Meta stats */}
                 <div className="pt-2 border-t border-slate-850 flex justify-between text-[8px] font-mono font-bold text-slate-600 uppercase">
-                  <span>Cryptographic ID: {selectedAlert.id}</span>
-                  <span>Vault Tier: MULTI-LEVEL</span>
+                  <span>Local ID: {selectedAlert.id}</span>
+                  <span>Storage: THIS BROWSER</span>
                 </div>
               </div>
             </div>
@@ -348,28 +353,28 @@ const AlertDetail: React.FC = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-2 px-1">
                 <Sparkles className="size-3.5 text-primary" />
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Maestro Intelligent Directives</h3>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Prototype Actions</h3>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button 
-                  onClick={() => triggerAction("DISPATCHING OUTSIDE API LINK...")}
-                  className="flex items-center justify-between p-4 rounded-2xl bg-primary text-white hover:bg-blue-600 transition-all shadow-lg text-left"
+                  onClick={() => triggerAction("ONLINE SYNC IS NOT CONNECTED")}
+                  className="flex items-center justify-between p-4 rounded-2xl bg-primary text-black hover:bg-orange-500 transition-all shadow-lg text-left"
                 >
                   <div>
-                    <span className="text-[8px] font-black tracking-widest block uppercase opacity-85">Automated Query</span>
-                    <span className="text-xs font-black uppercase tracking-tight block mt-0.5">Execute Online Sync</span>
+                    <span className="text-[8px] font-black tracking-widest block uppercase opacity-85">Unavailable in demo</span>
+                    <span className="text-xs font-black uppercase tracking-tight block mt-0.5">Online Sync</span>
                   </div>
                   <ChevronRight className="size-4" />
                 </button>
 
                 <button 
-                  onClick={() => triggerAction("ENCRYPTION SECURED ON KEYRING")}
+                  onClick={() => triggerAction("ITEM IS STORED LOCALLY WITHOUT ENCRYPTION")}
                   className="flex items-center justify-between p-4 rounded-2xl bg-card-dark border border-slate-850 hover:border-slate-750 text-slate-300 transition-all text-left"
                 >
                   <div>
-                    <span className="text-[8px] font-black tracking-widest block uppercase text-slate-500">Security Lock</span>
-                    <span className="text-xs font-black uppercase tracking-tight text-white block mt-0.5">Isolate Item Crypt</span>
+                    <span className="text-[8px] font-black tracking-widest block uppercase text-slate-500">Current storage</span>
+                    <span className="text-xs font-black uppercase tracking-tight text-white block mt-0.5">Unencrypted Local Data</span>
                   </div>
                   <ChevronRight className="size-4 text-slate-600" />
                 </button>
@@ -383,7 +388,7 @@ const AlertDetail: React.FC = () => {
                 className={`h-14 rounded-2xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-wider transition-all border ${
                   selectedAlert.isCompleted 
                     ? 'bg-slate-900 border-slate-800 text-slate-500' 
-                    : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10'
+                    : 'bg-primary/5 border-primary/20 text-primary hover:bg-primary/10'
                 }`}
               >
                 <CheckCircle className="size-4" />
@@ -401,57 +406,43 @@ const AlertDetail: React.FC = () => {
           </div>
         )}
 
-        {/* Encrypted Auto Backup Diagnostics Section */}
-        {backupInfo && (
-          <div className="rounded-[32px] bg-card-dark border border-slate-850 p-6 space-y-4 shadow-xl">
+        {/* Browser-local storage disclosure */}
+        {storageInfo && (
+          <div className="rounded-2xl bg-card-dark border border-slate-850 p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-850 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-primary/10 text-primary">
                   <Database className="size-4" />
                 </div>
                 <div className="text-left">
-                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Encrypted Auto Backup</h4>
-                  <p className="text-[8px] font-mono text-slate-500 font-bold">FIDO2 SYMMETRIC INTEGRITY</p>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Browser-Local Storage</h4>
+                  <p className="text-[8px] font-mono text-slate-500 font-bold">NO CLOUD BACKUP CONNECTED</p>
                 </div>
               </div>
-              <span className="text-[8px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-2.5 py-1 rounded-full flex items-center gap-1">
-                <Lock className="size-2.5" /> SECURE_LEDGER
+              <span className="text-[8px] font-black bg-red-500/10 text-red-300 border border-red-500/25 px-2.5 py-1 rounded-full flex items-center gap-1">
+                NOT ENCRYPTED
               </span>
             </div>
 
             <div className="space-y-3 font-mono text-[9px] text-left">
               <div className="flex justify-between items-center bg-black/45 p-3 rounded-xl border border-slate-900/60">
-                <span className="text-slate-500">LAST SYNCED</span>
-                <span className="text-slate-300 font-bold">{new Date(backupInfo.timestamp).toLocaleTimeString()}</span>
+                <span className="text-slate-500">LAST SAVED</span>
+                <span className="text-slate-300 font-bold">{storageInfo.lastSavedAt ? new Date(storageInfo.lastSavedAt).toLocaleTimeString() : 'Not yet saved'}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-black/25 p-2.5 rounded-xl border border-slate-900 flex flex-col justify-center">
-                  <span className="text-slate-500 text-[8px] uppercase">Cipher Format</span>
-                  <span className="text-slate-300 font-bold uppercase mt-0.5">{backupInfo.algorithm}</span>
+                  <span className="text-slate-500 text-[8px] uppercase">Storage Type</span>
+                  <span className="text-slate-300 font-bold uppercase mt-0.5">LOCALSTORAGE</span>
                 </div>
                 <div className="bg-black/25 p-2.5 rounded-xl border border-slate-900 flex flex-col justify-center">
-                  <span className="text-slate-500 text-[8px] uppercase">Payload Shards</span>
-                  <span className="text-slate-300 font-bold mt-0.5">{backupInfo.fullLength} octets</span>
+                  <span className="text-slate-500 text-[8px] uppercase">Approximate Size</span>
+                  <span className="text-slate-300 font-bold mt-0.5">{storageInfo.approximateBytes} BYTES</span>
                 </div>
               </div>
 
-              {/* Toggle to view raw hexadecimal backup cipher payload */}
-              <div className="space-y-2 pt-2 border-t border-slate-850/50">
-                <button
-                  type="button"
-                  onClick={() => setShowBackupCipher(!showBackupCipher)}
-                  className="text-[9px] font-black uppercase tracking-wider text-primary flex items-center gap-1"
-                >
-                  {showBackupCipher ? 'Hide Cryptographic Block' : 'Reveal Encrypted Hex Block'}
-                </button>
-                
-                {showBackupCipher && (
-                  <div className="bg-black p-3.5 rounded-2xl border border-slate-900 text-left font-mono text-[8px] text-slate-400 break-all leading-normal max-h-24 overflow-y-auto select-all">
-                    <span className="text-primary font-bold block mb-1">=== DESTRUCTION SAFE CRYPTO BLOCK (ROTATION KEY: ACTIVE) ===</span>
-                    {backupInfo.cipher}
-                  </div>
-                )}
+              <div className="pt-2 border-t border-slate-850/50 text-[9px] leading-relaxed text-primary">
+                Do not store passwords, identity documents, financial records, health information, or other sensitive data in this prototype.
               </div>
             </div>
           </div>

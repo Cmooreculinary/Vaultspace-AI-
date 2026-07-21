@@ -19,11 +19,15 @@ jobs:
           node-version: "22.22.0"
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - run: npm run check
       - run: test -f dist/index.html
-      - name: Confirm no AI secret was bundled
+      - name: Confirm no secret or counterfeit security claim was bundled
         run: |
           if grep -R --line-number --fixed-strings 'GEMINI_API_KEY' dist; then
             echo 'Browser bundle contains a server secret reference.' >&2
+            exit 1
+          fi
+          if grep -R --line-number -E 'FIPS 140|AES-256|military-grade|zero-knowledge synchronization' dist; then
+            echo 'Browser bundle contains an unsupported security claim.' >&2
             exit 1
           fi

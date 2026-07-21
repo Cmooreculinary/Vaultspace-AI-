@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Fingerprint, Shield, ShieldCheck, ShieldAlert, Key, Cpu, X, HelpCircle, Laptop, Landmark, Check } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Check, Fingerprint, KeyRound, ShieldAlert, X } from 'lucide-react';
 import { addAuditLog } from '../utils/auditLogger';
 import { getActiveProfile } from '../utils/profileHelper';
 
@@ -11,433 +11,256 @@ interface WebAuthnAuthProps {
 
 interface SavedCredential {
   id: string;
-  rawIdHex: string;
-  type: string;
-  registeredAt: string;
-  rpId: string;
+  rawId: string;
+  createdAt: string;
+  label: string;
+}
+
+const CREDENTIAL_KEY = 'vaultspace_webauthn_credentials';
+
+function randomBytes(length: number): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(new ArrayBuffer(length));
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+function toBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
+}
+
+function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
+  const normalized = value.replaceAll('-', '+').replaceAll('_', '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  const binary = atob(padded);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function loadCredentials(): SavedCredential[] {
+  const stored = localStorage.getItem(CREDENTIAL_KEY);
+  if (!stored) return [];
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is SavedCredential => {
+      if (!item || typeof item !== 'object') return false;
+      const candidate = item as Partial<SavedCredential>;
+      return (
+        typeof candidate.id === 'string' &&
+        typeof candidate.rawId === 'string' &&
+        typeof candidate.createdAt === 'string' &&
+        typeof candidate.label === 'string'
+      );
+    });
+  } catch {
+    return [];
+  }
 }
 
 const WebAuthnAuth: React.FC<WebAuthnAuthProps> = ({
   onSuccess,
   onCancel,
-  actionType = 'authenticate'
+  actionType = 'authenticate',
 }) => {
-  const [mode, setMode] = useState<'authenticate' | 'register'>(actionType);
-  const [profile] = useState(getActiveProfile());
-  const [status, setStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [challenge, setChallenge] = useState('');
-  const [rpId, setRpId] = useState('');
-  const [registeredKeys, setRegisteredKeys] = useState<SavedCredential[]>([]);
-  const [fallbackActive, setFallbackActive] = useState(false);
-  const [deviceModel, setDeviceModel] = useState('Hardware Security Key (FIDO2)');
-
-  // Random challenge generator
-  const generateChallenge = () => {
-    const array = new Uint8Array(16);
-    window.crypto.getRandomValues(array);
-    return Array.from(array, dec => dec.toString(16).padStart(2, '0')).join('');
-  };
+  const [mode, setMode] = useState<'register' | 'authenticate'>(actionType);
+  const [credentials, setCredentials] = useState<SavedCredential[]>(loadCredentials);
+  const [status, setStatus] = useState<'idle' | 'working' | 'responded' | 'error'>('idle');
+  const [message, setMessage] = useState('No device prompt has run.');
+  const profile = useMemo(getActiveProfile, []);
+  const supported = typeof window !== 'undefined' && window.isSecureContext && 'PublicKeyCredential' in window;
 
   useEffect(() => {
-    setRpId(window.location.hostname || 'vaultspace.io');
-    setChallenge(generateChallenge());
-    
-    // Load existing keys from localStorage
-    const saved = localStorage.getItem('vaultspace_webauthn_credentials');
-    if (saved) {
-      try {
-        setRegisteredKeys(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse saved credentials', e);
-      }
+    setMode(actionType);
+  }, [actionType]);
+
+  const persistCredentials = (next: SavedCredential[]) => {
+    setCredentials(next);
+    localStorage.setItem(CREDENTIAL_KEY, JSON.stringify(next));
+  };
+
+  const registerCredential = async () => {
+    if (!supported) {
+      setStatus('error');
+      setMessage('WebAuthn requires a supported browser and a secure HTTPS context.');
+      return;
     }
 
-    // Detect browser/device agent info to personalize UI
-    const ua = navigator.userAgent.toLowerCase();
-    if (ua.includes('macintosh') || ua.includes('mac os')) {
-      setDeviceModel('Apple Touch ID / Face ID');
-    } else if (ua.includes('windows')) {
-      setDeviceModel('Windows Hello Biometrics');
-    } else if (ua.includes('android')) {
-      setDeviceModel('Android Biometric Prompt');
-    } else if (ua.includes('iphone') || ua.includes('ipad')) {
-      setDeviceModel('iOS Biometric Authenticator');
-    }
-  }, []);
-
-  // Real WebAuthn call wrapper
-  const handleRealWebAuthn = async (type: 'register' | 'authenticate') => {
-    setStatus('scanning');
-    setErrorMsg(null);
-    setFallbackActive(false);
-
+    setStatus('working');
+    setMessage('Waiting for the browser or operating-system device prompt…');
     try {
-      if (!navigator.credentials) {
-        throw new Error("Web Authentication API is not supported in this browser context.");
-      }
+      const publicKey: PublicKeyCredentialCreationOptions = {
+        challenge: randomBytes(32),
+        rp: { name: 'VaultSpace Browser Demo', id: window.location.hostname },
+        user: {
+          id: randomBytes(16),
+          name: `${profile.alias}@vaultspace.demo`,
+          displayName: profile.name,
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        timeout: 60_000,
+        attestation: 'none',
+        authenticatorSelection: {
+          residentKey: 'preferred',
+          userVerification: 'preferred',
+        },
+      };
 
-      const rawChallenge = new TextEncoder().encode(challenge);
+      const result = await navigator.credentials.create({ publicKey });
+      if (!(result instanceof PublicKeyCredential)) throw new Error('No credential was returned.');
 
-      if (type === 'register') {
-        const userId = 'admin_user_' + Math.random().toString(36).substring(2, 9);
-        const options: PublicKeyCredentialCreationOptions = {
-          challenge: rawChallenge,
-          rp: {
-            name: "VaultSpace Tactical",
-            id: rpId,
-          },
-          user: {
-            id: new TextEncoder().encode(userId),
-            name: `${profile.name.toLowerCase().replace(/\s+/g, '.') || 'operator'}@vaultspace.io`,
-            displayName: profile.name,
-          },
-          pubKeyCredParams: [
-            { type: "public-key", alg: -7 },  // ES256
-            { type: "public-key", alg: -257 } // RS256
-          ],
-          authenticatorSelection: {
-            authenticatorAttachment: "platform",
-            userVerification: "required",
-            residentKey: "preferred"
-          },
-          timeout: 15000,
-        };
-
-        const credential = await navigator.credentials.create({ publicKey: options }) as PublicKeyCredential;
-        
-        if (credential) {
-          const credIdHex = Array.from(new Uint8Array(credential.rawId), x => x.toString(16).padStart(2, '0')).join('');
-          const newCred: SavedCredential = {
-            id: credential.id,
-            rawIdHex: credIdHex,
-            type: credential.type,
-            registeredAt: new Date().toISOString(),
-            rpId: rpId
-          };
-
-          const updatedKeys = [...registeredKeys, newCred];
-          setRegisteredKeys(updatedKeys);
-          localStorage.setItem('vaultspace_webauthn_credentials', JSON.stringify(updatedKeys));
-
-          setStatus('success');
-          addAuditLog(
-            'FIDO2 Key Registered',
-            `Passkey credential registered via actual WebAuthn API on RP: ${rpId}`,
-            'success'
-          );
-
-          setTimeout(() => {
-            setMode('authenticate');
-            setStatus('idle');
-          }, 15000);
-        }
-      } else {
-        // Authenticate
-        if (registeredKeys.length === 0) {
-          throw new Error("No passkeys registered. Please enroll a passkey first.");
-        }
-
-        const allowCredentials = registeredKeys.map(k => ({
-          type: 'public-key' as const,
-          id: new Uint8Array(k.rawIdHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)))
-        }));
-
-        const options: PublicKeyCredentialRequestOptions = {
-          challenge: rawChallenge,
-          rpId: rpId,
-          allowCredentials,
-          userVerification: "required",
-          timeout: 15000,
-        };
-
-        const assertion = await navigator.credentials.get({ publicKey: options }) as PublicKeyCredential;
-        if (assertion) {
-          setStatus('success');
-          addAuditLog(
-            'FIDO2 Assertion Verified',
-            `Passkey signature verified via hardware-enclave WebAuthn assertion on RP: ${rpId}`,
-            'success'
-          );
-          setTimeout(() => {
-            onSuccess();
-          }, 1000);
-        }
-      }
-    } catch (err: any) {
-      console.warn("WebAuthn execution blocked or failed. Transitioning to safe biometric sandbox simulation.", err);
-      // Fallback to high-fidelity Sandbox WebAuthn Simulation (essential for iframe environment)
-      setFallbackActive(true);
-      triggerSimulation(type);
+      const saved: SavedCredential = {
+        id: result.id,
+        rawId: toBase64Url(result.rawId),
+        createdAt: new Date().toISOString(),
+        label: `${profile.name} device credential`,
+      };
+      persistCredentials([saved, ...credentials.filter((item) => item.id !== saved.id)]);
+      setStatus('responded');
+      setMessage('The device created a WebAuthn credential ID. This demo stores only that public identifier locally; no server account was created.');
+      addAuditLog('Device prompt completed', 'A WebAuthn credential ID was created for this browser demo. No server verified or stored it.', 'info');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'The device prompt did not complete.';
+      setStatus('error');
+      setMessage(reason);
+      addAuditLog('Device prompt did not complete', reason, 'warning');
     }
   };
 
-  // High-Fidelity Simulation Engine for Nested Iframe Environments
-  const triggerSimulation = (type: 'register' | 'authenticate') => {
-    setStatus('scanning');
-    
-    setTimeout(() => {
-      if (type === 'register') {
-        const mockCredId = 'mock_cred_' + Math.random().toString(36).substring(2, 12);
-        const newCred: SavedCredential = {
-          id: mockCredId,
-          rawIdHex: Array.from({length: 32}, () => Math.floor(Math.random()*256).toString(16).padStart(2, '0')).join(''),
+  const requestAssertion = async () => {
+    if (!supported) {
+      setStatus('error');
+      setMessage('WebAuthn requires a supported browser and a secure HTTPS context.');
+      return;
+    }
+    if (credentials.length === 0) {
+      setStatus('error');
+      setMessage('No local credential ID is available. Register one first or continue directly into the demo.');
+      return;
+    }
+
+    setStatus('working');
+    setMessage('Waiting for the browser or operating-system device prompt…');
+    try {
+      const publicKey: PublicKeyCredentialRequestOptions = {
+        challenge: randomBytes(32),
+        rpId: window.location.hostname,
+        allowCredentials: credentials.map((credential) => ({
+          id: fromBase64Url(credential.rawId),
           type: 'public-key',
-          registeredAt: new Date().toISOString(),
-          rpId: rpId
-        };
+        })),
+        timeout: 60_000,
+        userVerification: 'preferred',
+      };
+      const result = await navigator.credentials.get({ publicKey });
+      if (!(result instanceof PublicKeyCredential)) throw new Error('No assertion was returned.');
 
-        const updatedKeys = [...registeredKeys, newCred];
-        setRegisteredKeys(updatedKeys);
-        localStorage.setItem('vaultspace_webauthn_credentials', JSON.stringify(updatedKeys));
-
-        setStatus('success');
-        addAuditLog(
-          'FIDO2 Passkey Enrolled',
-          `Biometric hardware passkey successfully enrolled (RP: ${rpId}, Algorithm: ES256) via sandboxed simulation.`,
-          'success'
-        );
-
-        setTimeout(() => {
-          setMode('authenticate');
-          setStatus('idle');
-        }, 1500);
-      } else {
-        // Authenticate
-        // Auto-seed one if none exists so user doesn't get locked out
-        if (registeredKeys.length === 0) {
-          const autoKey: SavedCredential = {
-            id: 'passkey_master_admin',
-            rawIdHex: 'e03fa34861b5c2d9f4857b10acbf394e',
-            type: 'public-key',
-            registeredAt: new Date().toISOString(),
-            rpId: rpId
-          };
-          setRegisteredKeys([autoKey]);
-          localStorage.setItem('vaultspace_webauthn_credentials', JSON.stringify([autoKey]));
-        }
-
-        setStatus('success');
-        addAuditLog(
-          'Biometric Passkey Verified',
-          `Touch/Face ID verified on secure enclave. Cryptographic assertion signature verified against RP: ${rpId}`,
-          'success'
-        );
-
-        setTimeout(() => {
-          onSuccess();
-        }, 1200);
-      }
-    }, 2400); // realistic biometric scan duration
+      setStatus('responded');
+      setMessage('The device returned a WebAuthn assertion. A production service must verify that assertion on its server; this static demo cannot authenticate you.');
+      addAuditLog('Device assertion returned', 'Browser received a WebAuthn assertion. It was not server-verified and is not treated as authentication.', 'warning');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'The device prompt did not complete.';
+      setStatus('error');
+      setMessage(reason);
+      addAuditLog('Device assertion unavailable', reason, 'warning');
+    }
   };
 
-  const handleClearKeys = () => {
-    if (confirm("CONFIRM DELETION: Remove all FIDO2 credentials and Passkeys from local storage?")) {
-      localStorage.removeItem('vaultspace_webauthn_credentials');
-      setRegisteredKeys([]);
-      addAuditLog('Passkeys Cleared', 'All registered device WebAuthn keys deleted by administrator.', 'warning');
-    }
+  const handlePrimaryAction = () => {
+    if (mode === 'register') void registerCredential();
+    else void requestAssertion();
+  };
+
+  const clearCredentials = () => {
+    if (!window.confirm('Remove the locally saved WebAuthn credential IDs from this browser?')) return;
+    localStorage.removeItem(CREDENTIAL_KEY);
+    setCredentials([]);
+    setStatus('idle');
+    setMessage('Local credential IDs removed. This does not remove passkeys from your device settings.');
+    addAuditLog('Local credential IDs cleared', 'VaultSpace removed its browser-local WebAuthn identifiers.', 'warning');
   };
 
   return (
-    <div className="fixed inset-0 z-[300] bg-slate-950/98 backdrop-blur-2xl flex flex-col justify-between p-6 md:p-10 animate-in fade-in duration-300 select-none overflow-y-auto">
-      
-      {/* Upper Tech Stats */}
-      <div className="w-full flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <Cpu className="size-4 text-primary animate-[pulse_2s_infinite]" />
-          <span className="text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] font-mono">Enclave Auth Engine v2.4</span>
-        </div>
-        
-        {onCancel && (
-          <button 
-            onClick={onCancel}
-            className="p-2 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all text-slate-400 hover:text-white"
-          >
-            <X className="size-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Centerpiece Scanner HUD */}
-      <div className="max-w-md mx-auto w-full flex flex-col items-center justify-center my-auto space-y-7">
-        
-        <div className="text-center space-y-2">
-          <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight uppercase flex items-center justify-center gap-2">
-            <Fingerprint className="size-8 text-primary shrink-0" />
-            WebAuthn Verification
-          </h2>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-            Verify identity using biometric credentials (Touch ID / Face ID / Windows Hello) or cryptographic passkeys.
-          </p>
+    <div className="fixed inset-0 z-[250] overflow-y-auto bg-[#0D0D0D] px-6 py-8 text-white">
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center gap-6">
+        <div className="flex items-start justify-between border-b border-[#2A2A2A] pb-5">
+          <div>
+            <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.22em] text-primary">Device prompt demo</p>
+            <h1 className="mt-2 font-display text-4xl uppercase tracking-wide">WebAuthn Lab</h1>
+          </div>
+          {onCancel && (
+            <button onClick={onCancel} className="grid size-10 place-items-center border border-[#2A2A2A] bg-[#141414]" aria-label="Close device prompt demo">
+              <X className="size-4" />
+            </button>
+          )}
         </div>
 
-        {/* Cyberpunk HUD Ring for Scanning */}
-        <div className="relative size-60 rounded-[48px] border border-slate-800/80 bg-slate-950/65 flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden">
-          
-          {/* Pulsing Outer Neon Rays */}
-          <div className="absolute inset-4 rounded-[40px] border border-dashed border-primary/20 pointer-events-none animate-[spin_40s_linear_infinite]"></div>
-          <div className="absolute inset-8 rounded-[32px] border border-slate-900 pointer-events-none"></div>
-
-          {/* Biometric Interactive Touch State Display */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 p-6 text-center">
-            {status === 'idle' && (
-              <button
-                onClick={() => handleRealWebAuthn(mode)}
-                className="group relative flex flex-col items-center justify-center space-y-3 cursor-pointer"
-              >
-                {/* Fingerprint Ambient Glow */}
-                <div className="size-20 rounded-full bg-primary/5 group-hover:bg-primary/10 border border-primary/15 group-hover:border-primary/40 flex items-center justify-center transition-all duration-300 shadow-2xl group-active:scale-95">
-                  <Fingerprint className="size-10 text-primary group-hover:scale-110 transition-transform duration-300" />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase text-primary tracking-widest block">
-                    {mode === 'authenticate' ? 'TAP TO ASSERT KEY' : 'TAP TO ENROLL PASSKEY'}
-                  </span>
-                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">
-                    Secured by {deviceModel}
-                  </span>
-                </div>
-              </button>
-            )}
-
-            {status === 'scanning' && (
-              <div className="flex flex-col items-center justify-center space-y-3">
-                <div className="relative">
-                  {/* Glowing Fingerprint with Laser Scanning Bar */}
-                  <div className="size-20 rounded-full bg-primary/10 border border-primary/40 flex items-center justify-center animate-pulse">
-                    <Fingerprint className="size-10 text-primary animate-[pulse_1s_infinite]" />
-                  </div>
-                  {/* Neon laser line sweep */}
-                  <div className="absolute left-0 right-0 h-0.5 bg-primary shadow-[0_0_10px_#135bec] top-1/2 animate-[bounce_2s_infinite]"></div>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase text-primary tracking-widest block animate-pulse">
-                    Scanning Sensor...
-                  </span>
-                  <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block">
-                    {fallbackActive ? 'ENCLAVE SANDBOX FALLBACK' : 'CALLING WEB_AUTH_API'}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {status === 'success' && (
-              <div className="flex flex-col items-center justify-center space-y-3 animate-in zoom-in-95 duration-200">
-                <div className="size-20 rounded-full bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center">
-                  <ShieldCheck className="size-10 text-emerald-400" />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase text-emerald-400 tracking-widest block">
-                    VERIFICATION SUCCESS
-                  </span>
-                  <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block">
-                    Credentials Released
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {status === 'error' && (
-              <div className="flex flex-col items-center justify-center space-y-3 animate-in zoom-in-95 duration-200">
-                <div className="size-20 rounded-full bg-rose-500/10 border border-rose-500/40 flex items-center justify-center">
-                  <ShieldAlert className="size-10 text-rose-500" />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest block">
-                    VERIFICATION FAILED
-                  </span>
-                  <span className="text-[8px] text-slate-400 font-bold max-w-xs block leading-tight px-2">
-                    {errorMsg || 'Handshake failed'}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Grid Accents */}
-          <div className="absolute bottom-4 left-4 text-[7px] font-mono text-slate-600 uppercase tracking-widest font-black">
-            STATE: {status.toUpperCase()}
-          </div>
-          <div className="absolute bottom-4 right-4 text-[7px] font-mono text-slate-600 uppercase tracking-widest font-black">
-            MODE: {mode.toUpperCase()}
-          </div>
+        <div className="flex gap-2 border border-[#2A2A2A] bg-[#141414] p-2">
+          {(['authenticate', 'register'] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => { setMode(item); setStatus('idle'); setMessage('No device prompt has run.'); }}
+              className={`h-10 flex-1 px-3 font-mono text-[9px] font-semibold uppercase tracking-widest ${mode === item ? 'bg-primary text-black' : 'text-slate-400 hover:bg-[#1E1E1E]'}`}
+            >
+              {item === 'authenticate' ? 'Try assertion' : 'Register ID'}
+            </button>
+          ))}
         </div>
 
-        {/* Diagnostic Enclave Ledger Information Card */}
-        <div className="w-full bg-slate-900/45 border border-slate-850 p-4 rounded-3xl space-y-3 font-mono text-[9px]">
-          <div className="flex items-center justify-between text-slate-500 border-b border-slate-850 pb-2">
-            <span className="font-bold uppercase tracking-wider">WebAuthn Session Payload</span>
-            <span className="text-primary font-black">CHALLENGE_ACTIVE</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-y-2 text-left">
+        <div className="border border-primary/30 bg-primary/5 p-4 text-left">
+          <div className="flex gap-3">
+            <ShieldAlert className="mt-0.5 size-5 shrink-0 text-primary" />
             <div>
-              <span className="text-slate-500 block uppercase">Relying Party ID</span>
-              <span className="text-slate-300 font-bold break-all">{rpId}</span>
-            </div>
-            <div>
-              <span className="text-slate-500 block uppercase">Cryptographic Challenge</span>
-              <span className="text-slate-300 font-bold font-mono break-all text-right block">{challenge.substring(0, 20)}...</span>
-            </div>
-            <div className="col-span-2 pt-1 border-t border-slate-850/50">
-              <span className="text-slate-500 block uppercase">Registered Device Keys</span>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-slate-300 font-bold">
-                  {registeredKeys.length === 0 ? 'No Passkeys Enrolled (Simulated Auto-Seeded)' : `${registeredKeys.length} Device Keys Found`}
-                </span>
-                {registeredKeys.length > 0 && (
-                  <button 
-                    onClick={handleClearKeys}
-                    className="text-[8px] font-black uppercase tracking-wider text-rose-500 hover:text-rose-400 transition-colors"
-                  >
-                    Wipe Keys
-                  </button>
-                )}
-              </div>
+              <p className="text-xs font-bold text-primary">This is not account authentication.</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-400">VaultSpace is static. It can ask your browser for a WebAuthn response, but it has no trusted server to verify that response.</p>
             </div>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="flex gap-2 bg-slate-900/60 p-1 rounded-2xl border border-slate-850 w-full max-w-xs">
-          <button
-            onClick={() => {
-              setMode('authenticate');
-              setStatus('idle');
-            }}
-            className={`flex-1 h-9 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-              mode === 'authenticate' 
-                ? 'bg-primary text-white shadow-md' 
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <Key className="size-3" />
-            Assert Passkey
+        <button
+          type="button"
+          onClick={handlePrimaryAction}
+          disabled={status === 'working'}
+          className="group flex min-h-24 items-center gap-4 border border-[#2A2A2A] bg-[#141414] p-5 text-left transition hover:border-primary disabled:opacity-60"
+        >
+          <span className="grid size-12 shrink-0 place-items-center border border-primary/40 bg-primary/10 text-primary">
+            {mode === 'register' ? <KeyRound className="size-6" /> : <Fingerprint className="size-6" />}
+          </span>
+          <span>
+            <span className="block text-sm font-bold">{status === 'working' ? 'Waiting for device…' : mode === 'register' ? 'Create a demo credential ID' : 'Request a device assertion'}</span>
+            <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">Uses the browser Web Authentication API when supported.</span>
+          </span>
+        </button>
+
+        <div className={`border p-4 ${status === 'responded' ? 'border-primary/30 bg-primary/5' : status === 'error' ? 'border-red-500/30 bg-red-500/5' : 'border-[#2A2A2A] bg-[#141414]'}`} role="status" aria-live="polite">
+          <div className="flex gap-3">
+            {status === 'responded' ? <Check className="size-4 shrink-0 text-primary" /> : <AlertTriangle className="size-4 shrink-0 text-slate-500" />}
+            <p className="text-[11px] leading-relaxed text-slate-300">{message}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={onSuccess} className="h-12 bg-primary px-4 text-[10px] font-black uppercase tracking-[0.16em] text-black hover:bg-orange-500">
+            Continue to demo
           </button>
-          <button
-            onClick={() => {
-              setMode('register');
-              setStatus('idle');
-            }}
-            className={`flex-1 h-9 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-              mode === 'register' 
-                ? 'bg-primary text-white shadow-md' 
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            <Cpu className="size-3" />
-            Register Passkey
+          <button type="button" onClick={clearCredentials} disabled={credentials.length === 0} className="h-12 border border-[#2A2A2A] bg-[#141414] px-4 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 disabled:opacity-40">
+            Clear local IDs ({credentials.length})
           </button>
         </div>
 
+        <p className="text-center font-mono text-[8px] uppercase tracking-[0.16em] text-slate-600">
+          {supported ? 'WebAuthn available in this browser context' : 'WebAuthn unavailable in this browser context'}
+        </p>
       </div>
-
-      {/* Cyberpunk Footer Disclaimer */}
-      <div className="w-full text-center text-[8px] text-slate-600 uppercase tracking-[0.25em] font-black py-2">
-        FIDO2 Universal Credential Handshake • Cryptographic Trust Enclave
-      </div>
-
     </div>
   );
 };
