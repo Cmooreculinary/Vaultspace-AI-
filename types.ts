@@ -12,7 +12,7 @@ export interface VaultFile {
   size: string;
   modified: string;
   category: string;
-  security: 'Secure' | 'Restricted' | 'Top Secret';
+  recordState: 'Sample' | 'Local demo';
   sharedWith?: string[];
   owner?: string;
 }

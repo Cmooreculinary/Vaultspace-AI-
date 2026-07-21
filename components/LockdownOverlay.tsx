@@ -1,124 +1,74 @@
-import React, { useState, useEffect } from 'react';
-import { ShieldAlert, Terminal, Lock } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ShieldAlert, Terminal, Trash2 } from 'lucide-react';
 
 interface LockdownOverlayProps {
   onComplete: () => void;
 }
 
+const RESET_STEPS = [
+  'Starting VaultSpace browser-data reset…',
+  'Removing local demo profiles and preferences…',
+  'Removing local alerts and activity history…',
+  'Removing locally saved credential identifiers…',
+  'Leaving unrelated browser storage untouched…',
+  'VaultSpace demo data reset complete.',
+];
+
+function removeVaultSpaceData(): void {
+  const keys: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key && (key.startsWith('vaultspace_') || key.startsWith('vault_'))) keys.push(key);
+  }
+  for (const key of keys) localStorage.removeItem(key);
+}
+
 const LockdownOverlay: React.FC<LockdownOverlayProps> = ({ onComplete }) => {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
-  const [stage, setStage] = useState<'shredding' | 'sealing' | 'complete'>('shredding');
-
-  const steps = [
-    { text: '⚠️ [EMERGENCY SOS] INITIATED BY NAV MODULE...', delay: 100 },
-    { text: '🔒 [REVOKE] Invalidating active user session...', delay: 300 },
-    { text: '💥 [SHRED] Scrambling local memory caches & encryption keys...', delay: 600 },
-    { text: '🛡️ [SEAL] Activating zero-knowledge storage silos...', delay: 1000 },
-    { text: '📡 [NETWORK] Isolating synchronization tunnel interfaces...', delay: 1300 },
-    { text: '🧬 [BIOMETRIC] De-linking facial geometry cache...', delay: 1600 },
-    { text: '✅ [SUCCESS] VaultSpace completely sealed and hidden.', delay: 1900 },
-  ];
+  const completedRef = useRef(false);
 
   useEffect(() => {
-    // Log animations
-    steps.forEach((step) => {
-      const timer = setTimeout(() => {
-        setLogs((prev) => [...prev, step.text]);
-      }, step.delay);
-      return () => clearTimeout(timer);
-    });
+    const timers = RESET_STEPS.map((step, index) => window.setTimeout(() => {
+      setLogs((current) => [...current, step]);
+    }, 120 + index * 260));
 
-    // Progress animation
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setStage('complete');
-          return 100;
-        }
-        return prev + 5;
-      });
-    }, 100);
+    const interval = window.setInterval(() => {
+      setProgress((current) => Math.min(current + 5, 100));
+    }, 75);
 
-    return () => clearInterval(interval);
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
-    if (stage === 'complete') {
-      const timer = setTimeout(() => {
-        onComplete();
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [stage, onComplete]);
+    if (progress < 100 || completedRef.current) return;
+    completedRef.current = true;
+    removeVaultSpaceData();
+    const timer = window.setTimeout(onComplete, 650);
+    return () => window.clearTimeout(timer);
+  }, [progress, onComplete]);
 
   return (
-    <div className="fixed inset-0 z-[300] bg-[#070202] text-red-500 flex flex-col justify-between p-6 select-none animate-in fade-in duration-500 overflow-hidden font-mono">
-      {/* Background Red Strobe/Pulse */}
-      <div className="absolute inset-0 bg-red-950/10 animate-pulse pointer-events-none" />
+    <div className="fixed inset-0 z-[500] flex flex-col overflow-hidden bg-[#0D0D0D] p-6 font-mono text-red-400">
+      <header className="relative z-10 flex items-center justify-between border-b border-red-900/40 pb-4">
+        <div className="flex items-center gap-2"><ShieldAlert className="size-5" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">Local Data Reset</span></div>
+        <span className="border border-red-900/50 px-2 py-1 text-[8px] font-bold uppercase tracking-wider">This browser only</span>
+      </header>
 
-      {/* Header Warning */}
-      <div className="flex items-center justify-between border-b border-red-900/30 pb-4 relative z-10">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="size-5 text-red-500 animate-bounce" />
-          <span className="text-[10px] font-black tracking-[0.25em] uppercase text-red-400">Tactical SOS Lockout Active</span>
+      <main className="relative z-10 mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-7">
+        <span className="grid size-20 place-items-center border border-red-500/50 bg-red-500/5"><Trash2 className="size-8" /></span>
+        <div className="text-center"><h1 className="font-display text-4xl uppercase tracking-wide text-white">Clearing Demo Data</h1><p className="mt-2 text-[9px] uppercase tracking-[0.14em] text-red-300">VaultSpace keys are being removed from localStorage</p></div>
+        <div className="w-full"><div className="h-2 overflow-hidden border border-red-900/40 bg-red-950/20"><div className="h-full bg-red-600 transition-all" style={{ width: `${progress}%` }} /></div><div className="mt-2 flex justify-between text-[8px] font-bold"><span>RESET PROGRESS</span><span>{progress}%</span></div></div>
+        <div className="h-44 w-full overflow-y-auto border border-red-950/60 bg-black p-4 text-[9px]">
+          <div className="mb-3 flex items-center gap-2 border-b border-red-950/60 pb-2"><Terminal className="size-3" /><strong>LOCAL_RESET</strong></div>
+          <div className="space-y-2">{logs.map((log) => <p key={log} className={log.endsWith('complete.') ? 'font-bold text-primary' : 'text-red-300/80'}>{log}</p>)}</div>
         </div>
-        <span className="text-[9px] font-black text-red-600 border border-red-950 px-2 py-0.5 rounded uppercase tracking-widest">
-          LEVEL-3 SEC
-        </span>
-      </div>
+      </main>
 
-      {/* Main Terminal Activity */}
-      <div className="flex-1 my-auto flex flex-col items-center justify-center space-y-8 max-w-sm mx-auto w-full relative z-10">
-        {/* Glowing Red Icon */}
-        <div className="relative">
-          <div className="absolute -inset-4 rounded-full bg-red-500/10 blur-xl animate-pulse"></div>
-          <div className="size-20 rounded-full border border-red-500/50 flex items-center justify-center bg-black shadow-[0_0_30px_rgba(239,68,68,0.2)]">
-            <Lock className="size-8 text-red-500 animate-pulse" />
-          </div>
-        </div>
-
-        {/* Warning label */}
-        <div className="text-center space-y-1">
-          <h2 className="text-xl font-black text-white uppercase tracking-tight">SHREDDING DATA CORES</h2>
-          <p className="text-[9px] text-red-400 font-bold uppercase tracking-[0.15em]">
-            Zero-knowledge container isolated
-          </p>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="w-full space-y-2">
-          <div className="h-2 bg-red-950/40 rounded-full overflow-hidden border border-red-900/20">
-            <div 
-              className="h-full bg-red-600 transition-all duration-100 shadow-[0_0_10px_rgba(239,68,68,0.5)]" 
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-[9px] font-bold text-red-400">
-            <span>SECURE WIPING PROG</span>
-            <span>{progress}%</span>
-          </div>
-        </div>
-
-        {/* Scrolling Terminal Logs */}
-        <div className="w-full bg-black/80 border border-red-950/40 p-4 rounded-2xl h-44 overflow-y-auto text-left space-y-1.5 text-[9px] hide-scrollbar">
-          <div className="flex items-center gap-1.5 text-red-500 border-b border-red-950 pb-1.5 mb-2">
-            <Terminal className="size-3" />
-            <span className="font-black text-xs">SHRED_DAEMON_v2.5</span>
-          </div>
-          {logs.map((log, idx) => (
-            <p key={idx} className={log.startsWith('✅') ? 'text-emerald-400 font-black' : 'text-red-400/80'}>
-              {log}
-            </p>
-          ))}
-        </div>
-      </div>
-
-      {/* Footer System Specs */}
-      <div className="text-center text-[8px] text-red-950/60 uppercase tracking-[0.25em] font-bold relative z-10 py-2">
-        CRITICAL ERROR: VAULT ENCLAVE FORCE SHUTDOWN • CORES UNREACHABLE
-      </div>
+      <p className="relative z-10 text-center text-[8px] uppercase tracking-[0.18em] text-slate-700">This action does not wipe device storage, remote accounts, or unrelated site data.</p>
     </div>
   );
 };

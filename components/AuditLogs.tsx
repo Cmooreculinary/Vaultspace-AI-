@@ -1,154 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { getAuditLogs, AuditLog, addAuditLog } from '../utils/auditLogger';
-import { Shield, Search, Terminal, Trash2, Calendar, HardDrive, RefreshCw } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Search, Trash2 } from 'lucide-react';
+import { AuditLog, getAuditLogs } from '../utils/auditLogger';
 
 const AuditLogs: React.FC = () => {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'success' | 'warning' | 'error' | 'info'>('all');
+  const [logs, setLogs] = useState<AuditLog[]>(getAuditLogs);
+  const [query, setQuery] = useState('');
 
-  const loadLogs = () => {
+  useEffect(() => {
+    const load = () => setLogs(getAuditLogs());
+    window.addEventListener('audit_logs_updated', load);
+    return () => window.removeEventListener('audit_logs_updated', load);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return logs;
+    return logs.filter((log) => `${log.event} ${log.details} ${log.operator}`.toLowerCase().includes(needle));
+  }, [logs, query]);
+
+  const clearLogs = () => {
+    if (!window.confirm('Clear the browser-local activity history?')) return;
+    localStorage.removeItem('vault_audit_logs');
     setLogs(getAuditLogs());
   };
 
-  useEffect(() => {
-    loadLogs();
-    
-    // Listen for live update events
-    window.addEventListener('audit_logs_updated', loadLogs);
-    return () => {
-      window.removeEventListener('audit_logs_updated', loadLogs);
-    };
-  }, []);
-
-  const handleClear = () => {
-    if (confirm("CONFIRM COMMAND: Clear volatile cryptographic access log keyring? This cannot be undone.")) {
-      localStorage.removeItem('vault_audit_logs');
-      addAuditLog(
-        'Logs Purged', 
-        'Administrative session cleared access logs database cache.', 
-        'warning'
-      );
-      loadLogs();
-    }
-  };
-
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = 
-      log.event.toLowerCase().includes(search.toLowerCase()) ||
-      log.details.toLowerCase().includes(search.toLowerCase()) ||
-      log.operator.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesFilter = filter === 'all' || log.status === filter;
-    
-    return matchesSearch && matchesFilter;
-  });
-
   return (
-    <div id="recharts-audit-logs-console" className="rounded-[32px] bg-card-dark p-6 border border-slate-800 shadow-2xl relative overflow-hidden transition-all duration-300 hover:border-slate-700">
-      <div className="absolute -right-16 -bottom-16 size-48 rounded-full bg-primary/5 blur-3xl pointer-events-none"></div>
-
-      {/* Top Title/Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20">
-            <Terminal className="size-5" />
-          </div>
-          <div>
-            <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Access Audit Feed</h3>
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mt-0.5">FIPS compliant ledger</p>
-          </div>
+    <section className="border border-[#2A2A2A] bg-card-dark p-5" aria-labelledby="activity-log-heading">
+      <div className="flex items-start justify-between gap-4 border-b border-[#2A2A2A] pb-4">
+        <div>
+          <p className="font-mono text-[8px] font-semibold uppercase tracking-[0.2em] text-primary">Browser only</p>
+          <h2 id="activity-log-heading" className="mt-1 text-sm font-black uppercase text-white">Local activity history</h2>
+          <p className="mt-1 text-[9px] text-slate-500">For demo feedback only. This is not a security or compliance audit trail.</p>
         </div>
-
-        <button 
-          onClick={handleClear}
-          className="p-2 rounded-xl hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-all text-slate-500 hover:text-red-400"
-          title="Flush Logs Cache"
-        >
-          <Trash2 className="size-4" />
+        <button type="button" onClick={clearLogs} className="grid size-9 shrink-0 place-items-center border border-[#2A2A2A] text-slate-500 hover:border-red-500 hover:text-red-400" aria-label="Clear local activity history">
+          <Trash2 className="size-3.5" />
         </button>
       </div>
 
-      {/* Filters & Search Input Row */}
-      <div className="space-y-3 mb-4">
-        {/* Search Bar */}
-        <div className="flex items-center bg-slate-900 border border-slate-850 rounded-xl px-3 h-10 gap-2.5">
-          <Search className="size-3.5 text-slate-500 shrink-0" />
-          <input 
-            type="text" 
-            placeholder="FILTER SECURITY AUDITS..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="bg-transparent border-none focus:ring-0 text-white font-mono text-[9px] placeholder-slate-750 flex-1 tracking-wider uppercase"
-          />
-        </div>
+      <label className="mt-4 flex h-11 items-center gap-3 border border-[#2A2A2A] bg-black/30 px-3">
+        <Search className="size-3.5 text-slate-600" />
+        <span className="sr-only">Filter local activity</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter local activity…" className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[10px] text-white placeholder:text-slate-700 focus:ring-0" />
+      </label>
 
-        {/* Filter Badges */}
-        <div className="flex flex-wrap gap-1.5 bg-slate-900/60 p-1 rounded-xl border border-slate-850">
-          {(['all', 'success', 'warning', 'error', 'info'] as const).map((lvl) => (
-            <button
-              key={lvl}
-              onClick={() => setFilter(lvl)}
-              className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                filter === lvl 
-                  ? 'bg-primary text-white shadow-md' 
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              {lvl}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Real-time Logs Streams */}
-      <div className="space-y-2.5 max-h-72 overflow-y-auto hide-scrollbar border border-slate-850/50 rounded-2xl p-3 bg-black/30">
-        {filteredLogs.length > 0 ? (
-          filteredLogs.map((log) => (
-            <div 
-              key={log.id} 
-              className="flex items-start gap-3 p-3 rounded-xl border border-slate-850 bg-slate-900/40 hover:border-slate-800 transition-colors"
-            >
-              {/* Event Badge Dot */}
-              <span className={`size-2 rounded-full shrink-0 mt-1.5 ${
-                log.status === 'success' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
-                log.status === 'warning' ? 'bg-amber-500 shadow-[0_0_6px_#f59e0b]' :
-                log.status === 'error' ? 'bg-rose-500 shadow-[0_0_6px_#ef4444]' :
-                'bg-blue-400'
-              }`}></span>
-
-              <div className="flex-1 space-y-1 min-w-0">
-                <div className="flex justify-between items-start gap-2">
-                  <h5 className="text-[10px] font-black text-white uppercase tracking-wide truncate">{log.event}</h5>
-                  <span className="text-[8px] font-mono text-slate-500 font-bold shrink-0">
-                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </span>
-                </div>
-                
-                <p className="text-[9px] font-medium text-slate-400 leading-relaxed text-left">
-                  {log.details}
-                </p>
-
-                <div className="flex items-center gap-2 pt-1 border-t border-slate-850/30 text-[8px] font-black text-slate-500 uppercase tracking-widest">
-                  <span className="truncate">Op: {log.operator}</span>
-                  <span>•</span>
-                  <span>Enclave: Secured</span>
-                </div>
-              </div>
+      <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
+        {filtered.length === 0 ? (
+          <p className="border border-dashed border-[#2A2A2A] p-6 text-center text-[10px] text-slate-600">No matching activity.</p>
+        ) : filtered.map((log) => (
+          <article key={log.id} className="border border-[#2A2A2A] bg-black/20 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-[10px] font-bold text-slate-200">{log.event}</h3>
+              <time className="shrink-0 font-mono text-[8px] text-slate-700" dateTime={log.timestamp}>{new Date(log.timestamp).toLocaleString()}</time>
             </div>
-          ))
-        ) : (
-          <div className="py-12 text-center border border-dashed border-slate-850 rounded-xl">
-            <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">No matching logs found</p>
-          </div>
-        )}
+            <p className="mt-2 text-[9px] leading-relaxed text-slate-500">{log.details}</p>
+            <p className="mt-2 font-mono text-[8px] uppercase tracking-wider text-slate-700">{log.operator} · {log.status}</p>
+          </article>
+        ))}
       </div>
-
-      <div className="mt-3.5 flex items-center justify-between text-[8px] font-black text-slate-600 uppercase tracking-widest px-1">
-        <span>Protected Nodes: AES-256</span>
-        <span>Total Records: {logs.length}</span>
-      </div>
-    </div>
+    </section>
   );
 };
 

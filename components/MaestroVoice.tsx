@@ -1,19 +1,43 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, Send, Sparkles, CheckCircle, Keyboard, Play, FileText, RefreshCw, AlertTriangle, ChevronRight } from 'lucide-react';
-import { createAlert } from '../utils/alertStorage';
-import { addAuditLog } from '../utils/auditLogger';
+import React, { useState, useEffect } from 'react';
+import { Mic, MicOff, X, Send, Sparkles, CheckCircle, Keyboard, Play, ShieldAlert } from 'lucide-react';
+import { AlertItem, createAlert } from '../utils/alertStorage';
 import { getActiveProfile } from '../utils/profileHelper';
 
 interface MaestroVoiceProps {
   onClose: () => void;
 }
 
+interface SpeechRecognitionResultEvent {
+  results: { [index: number]: { [index: number]: { transcript: string } } };
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onstart: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionLike;
+}
+
 const VOICE_SUGGESTIONS = [
   "Remind me to renew my passport",
   "Alert: check athletic scout reports",
-  "Remind me to call Nikki at 10 AM",
-  "Create high priority task to review London keynote slides",
-  "Remind me to service Sorento powertrain next week",
+  "Remind me to call the supplier at 10 AM",
+  "Create high priority task to review presentation slides",
+  "Remind me to schedule vehicle service next week",
 ];
 
 const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
@@ -21,15 +45,19 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [assistantResponse, setAssistantResponse] = useState<string>('Listening for command...');
-  const [lastCreatedAlert, setLastCreatedAlert] = useState<any | null>(null);
-  const [recognition, setRecognition] = useState<any | null>(null);
+  const [lastCreatedAlert, setLastCreatedAlert] = useState<AlertItem | null>(null);
+  const [recognition, setRecognition] = useState<SpeechRecognitionLike | null>(null);
   const [showKeyboardInput, setShowKeyboardInput] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [visualizerHeights, setVisualizerHeights] = useState<number[]>([15, 40, 20, 50, 10, 30, 25, 45, 12, 35]);
 
   // Handle Speech Recognition Setup
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const browserWindow = window as Window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const SpeechRecognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = false;
@@ -38,11 +66,10 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
 
       rec.onstart = () => {
         setIsListening(true);
-        setAssistantResponse(`Optical sound nodes aligned. Go ahead, ${profile.name}...`);
+        setAssistantResponse(`Microphone is active. Go ahead, ${profile.name}…`);
       };
 
-      rec.onerror = (event: any) => {
-        console.error("Speech Recognition Error:", event.error);
+      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
         setIsListening(false);
         if (event.error === 'not-allowed') {
           setAssistantResponse("Microphone permission denied. Feel free to type or tap a command suggestion below.");
@@ -55,13 +82,14 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
         setIsListening(false);
       };
 
-      rec.onresult = (event: any) => {
+      rec.onresult = (event: SpeechRecognitionResultEvent) => {
         const speechToText = event.results[0][0].transcript;
         setInputText(speechToText);
         handleProcessCommand(speechToText);
       };
 
       setRecognition(rec);
+      return () => rec.abort();
     }
   }, []);
 
@@ -96,18 +124,17 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
       try {
         recognition.start();
       } catch (e) {
-        console.error(e);
         recognition.stop();
       }
     }
   };
 
-  // Parser: converts spoke text into real alert items with encrypted backups
+  // Browser-only rules convert a transcript into a local demo alert.
   const handleProcessCommand = async (command: string) => {
     if (!command.trim()) return;
     
     setIsAnalyzing(true);
-    setAssistantResponse("Demodulating audio... Analyzing intent via Maestro NLQ...");
+    setAssistantResponse("Applying local keyword rules…");
     
     setTimeout(() => {
       let title = command;
@@ -117,7 +144,7 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
 
       const lower = command.toLowerCase();
 
-      // Simple, highly effective parsing heuristics
+      // Deliberately simple, inspectable parsing heuristics.
       if (lower.startsWith('remind me to ')) {
         title = command.substring(13);
         // capitalize first letter
@@ -148,11 +175,11 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
         category = 'Consulting';
       }
 
-      // Save Alert & Encrypted Backup automatically
+      // Save the alert to unencrypted browser localStorage.
       const newAlert = createAlert(title, description, urgency, category);
       
       setLastCreatedAlert(newAlert);
-      setAssistantResponse(`Command executed successfully, ${profile.name}. Alert spawned.`);
+      setAssistantResponse(`Local alert created, ${profile.name}.`);
       setIsAnalyzing(false);
       setInputText('');
     }, 1500);
@@ -164,13 +191,13 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[300] bg-[#070a13]/98 backdrop-blur-2xl flex flex-col justify-between p-6 md:p-8 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[300] bg-[#0D0D0D]/95 backdrop-blur-2xl flex flex-col justify-between p-6 md:p-8 animate-in fade-in duration-300">
       
       {/* Top Header */}
       <div className="w-full flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="size-2 rounded-full bg-primary animate-pulse"></span>
-          <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] font-mono">Maestro Assistant Node</span>
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] font-mono">Browser Assistant Demo</span>
         </div>
         <button
           onClick={onClose}
@@ -184,15 +211,15 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
       <div className="flex flex-col items-center justify-center flex-1 w-full gap-8 text-center max-w-md mx-auto">
         
         {/* Dynamic Wave Ring */}
-        <div className="relative size-48 rounded-[48px] bg-slate-950/45 border border-slate-900 flex items-center justify-center shadow-2xl">
-          <div className="absolute inset-4 rounded-[40px] bg-primary/5 blur-xl animate-pulse"></div>
+        <div className="relative size-48 rounded-2xl bg-slate-950/45 border border-slate-900 flex items-center justify-center shadow-2xl">
+          <div className="absolute inset-4 rounded-2xl bg-primary/5 blur-xl animate-pulse"></div>
           
           {/* Wave Lines Visualizer */}
           <div className="flex items-center gap-1.5 h-20 z-10">
             {visualizerHeights.map((h, i) => (
               <div 
                 key={i} 
-                className="w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(19,91,236,0.5)] transition-all duration-100"
+                className="w-1.5 rounded-full bg-primary shadow-lg shadow-primary/40 transition-all duration-100"
                 style={{ 
                   height: `${h}px`,
                   opacity: isListening ? 1 : isAnalyzing ? 0.8 : 0.4
@@ -213,10 +240,10 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
 
         {/* Action Success Card */}
         {lastCreatedAlert && (
-          <div className="w-full bg-emerald-950/20 border border-emerald-500/20 rounded-3xl p-5 text-left animate-in slide-in-from-bottom-5 duration-300 shadow-xl">
-            <div className="flex items-center gap-2 mb-2 text-emerald-400">
+          <div className="w-full bg-primary/5 border border-primary/20 rounded-3xl p-5 text-left animate-in slide-in-from-bottom-5 duration-300 shadow-xl">
+            <div className="flex items-center gap-2 mb-2 text-primary">
               <CheckCircle className="size-4 shrink-0" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Alert Created & Encrypted</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">Alert Saved Locally</span>
             </div>
             <h4 className="text-white font-black text-sm uppercase tracking-tight">{lastCreatedAlert.title}</h4>
             <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{lastCreatedAlert.description}</p>
@@ -247,7 +274,7 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
             <button 
               type="submit" 
               disabled={!inputText.trim() || isAnalyzing}
-              className="size-10 rounded-xl bg-primary hover:bg-blue-600 transition-colors flex items-center justify-center text-white disabled:opacity-50"
+              className="size-10 rounded-xl bg-primary hover:bg-orange-500 transition-colors flex items-center justify-center text-black disabled:opacity-50"
             >
               <Send className="size-4" />
             </button>
@@ -277,6 +304,10 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
           </div>
         )}
 
+        <div className="w-full border border-primary/30 bg-primary/5 p-3 text-left">
+          <div className="flex gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0 text-primary" /><p className="text-[9px] leading-relaxed text-slate-400">Voice recognition is provided by your browser and may use its vendor's speech service. Typed commands stay in this browser. Alerts are stored locally without encryption.</p></div>
+        </div>
+
         {/* Mic Control Row */}
         <div className="flex items-center gap-4">
           <button
@@ -297,7 +328,7 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
             className={`relative size-20 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 active:scale-95 ${
               isListening 
                 ? 'bg-red-500 text-white shadow-red-500/20' 
-                : 'bg-primary text-white shadow-primary/30 hover:bg-blue-600'
+                : 'bg-primary text-black shadow-primary/30 hover:bg-orange-500'
             }`}
           >
             {isListening ? (
@@ -313,7 +344,7 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
           {lastCreatedAlert ? (
             <button
               onClick={onClose}
-              className="size-12 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xl shadow-emerald-500/20 animate-bounce"
+              className="size-12 rounded-full bg-primary text-black flex items-center justify-center shadow-xl shadow-primary/20 animate-bounce"
             >
               <CheckCircle className="size-5" />
             </button>
@@ -323,7 +354,7 @@ const MaestroVoice: React.FC<MaestroVoiceProps> = ({ onClose }) => {
         </div>
 
         <p className="text-[9px] text-slate-500 font-black uppercase tracking-[0.2em]">
-          {isListening ? 'STREAMING REAL-TIME AUDIO...' : 'TAP MIC TO INITIATE COGNITIVE LINK'}
+          {isListening ? 'MICROPHONE ACTIVE — TAP TO STOP' : 'TAP MIC FOR BROWSER SPEECH RECOGNITION'}
         </p>
       </div>
 

@@ -1,7 +1,6 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { ArrowLeft, FileWarning, Search, Settings, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import BiometricAuth from './BiometricAuth';
 
 interface VaultItem {
   id: string;
@@ -11,249 +10,89 @@ interface VaultItem {
   modified: string;
   icon: string;
   category: string;
-  preview?: string;
-  security?: string;
-  description?: string;
+  description: string;
 }
 
 interface VaultDetailProps {
   tier: 'FAMILY' | 'ADULT';
 }
 
-const VAULT_DATA: Record<string, VaultItem[]> = {
+const VAULT_DATA: Record<VaultDetailProps['tier'], VaultItem[]> = {
   FAMILY: [
-    { id: 'f1', name: "Nikki - Anniversary 2023", type: 'JPG', size: '5.4 MB', modified: '2h ago', icon: 'favorite', category: 'Nikki', preview: 'https://picsum.photos/seed/anniversary/800/600', description: 'Celebrating 25 years in the mountains.' },
-    { id: 'f2', name: "Brennan - Soccer States", type: 'MOV', size: '1.2 GB', modified: '1d ago', icon: 'sports_soccer', category: 'Brennan', preview: 'https://picsum.photos/seed/soccer/800/600', description: 'Winning goal from the championship match.' },
-    { id: 'f3', name: "Cullen - Graduation Photo", type: 'JPG', size: '8.2 MB', modified: '3h ago', icon: 'school', category: 'Cullen', preview: 'https://picsum.photos/seed/grad/800/600', description: 'Cullen receiving his diploma with high honors.' },
-    { id: 'f4', name: "Tyler - College Essay", type: 'PDF', size: '1.2 MB', modified: '5d ago', icon: 'description', category: 'Tyler', description: 'Draft of Tyler\'s admissions essay regarding team dynamics.' },
-    { id: 'f5', name: "Ian - Birthday Vlog", type: 'MP4', size: '420 MB', modified: 'Yesterday', icon: 'cake', category: 'Ian', preview: 'https://picsum.photos/seed/bday/800/600', description: 'Ian opening his first set of golf clubs.' },
-    { id: 'f6', name: "Family Holiday 2023", type: 'JPG', size: '15 MB', modified: '2w ago', icon: 'home', category: 'Family', preview: 'https://picsum.photos/seed/holiday/800/600', description: 'The whole crew: Bill, Nikki, and the boys in Colorado.' },
-    { id: 'f7', name: "Nikki - Beach Trip", type: 'JPG', size: '4.1 MB', modified: '1m ago', icon: 'beach_access', category: 'Nikki', preview: 'https://picsum.photos/seed/beach/800/600', description: 'Summer vacation at the coast.' },
-    { id: 'f8', name: "Brennan - Training Drills", type: 'MOV', size: '800 MB', modified: '2d ago', icon: 'fitness_center', category: 'Brennan', preview: 'https://picsum.photos/seed/training/800/600', description: 'New high-intensity interval drills.' },
+    { id: 'family-photo', name: 'Sample Family Photo', type: 'JPG LABEL', size: 'DEMO', modified: 'Sample', icon: 'photo', category: 'Media', description: 'Static metadata showing how a family photo card could appear.' },
+    { id: 'home-video', name: 'Sample Home Video', type: 'MP4 LABEL', size: 'DEMO', modified: 'Sample', icon: 'videocam', category: 'Media', description: 'Static metadata showing how a home-video card could appear.' },
+    { id: 'household-list', name: 'Household Checklist', type: 'NOTE LABEL', size: 'DEMO', modified: 'Sample', icon: 'checklist', category: 'Records', description: 'Static metadata showing a household task document.' },
+    { id: 'school-record', name: 'School Record Example', type: 'PDF LABEL', size: 'DEMO', modified: 'Sample', icon: 'school', category: 'Records', description: 'Static metadata only. No student record is stored.' },
+    { id: 'trip-plan', name: 'Trip Plan Example', type: 'NOTE LABEL', size: 'DEMO', modified: 'Sample', icon: 'map', category: 'Planning', description: 'Static metadata showing how a planning record could appear.' },
+    { id: 'maintenance-note', name: 'Maintenance Note', type: 'NOTE LABEL', size: 'DEMO', modified: 'Sample', icon: 'home_repair_service', category: 'Planning', description: 'Static metadata showing a household maintenance note.' },
   ],
   ADULT: [
-    { id: 'a1', name: "Manuscript: The Winning Mindset", type: 'DOCX', size: '4.2 MB', modified: '1h ago', icon: 'book_2', category: 'Author', security: 'Restricted', description: 'Latest draft for the upcoming book on team building in professional sports.' },
-    { id: 'a2', name: "Consulting Protocol: Team Unity", type: 'PDF', size: '1.8 MB', modified: 'Yesterday', icon: 'groups', category: 'Consulting', security: 'Top Secret', description: 'Proprietary framework for repairing dysfunctional corporate teams.' },
-    { id: 'a3', name: "Speaking Keynote: Elite Teams", type: 'PPTX', size: '45 MB', modified: '3d ago', icon: 'present_to_all', category: 'Speaker', security: 'Secure', description: 'Visuals for the upcoming conference keynote on performance psychology.' },
-    { id: 'a4', name: "Athlete Assessment: Confidential", type: 'XLSX', size: '250 KB', modified: '1h ago', icon: 'psychology', category: 'Consulting', security: 'Top Secret', description: 'Sensitive psych profiles for the 2024 draft class.' },
-    { id: 'a5', name: "Speaker Agreement: Global Summit", type: 'PDF', size: '2.1 MB', modified: '1w ago', icon: 'history_edu', category: 'Legal', security: 'Restricted', description: 'Signed contract for the Leadership Summit in London.' },
-    { id: 'a6', name: "Financial Strategy 2024", type: 'XLSX', size: '1.1 MB', modified: '5d ago', icon: 'account_balance', category: 'Legal', security: 'Top Secret', description: 'Long-term financial planning for Moore Consulting.' },
-  ]
-};
-
-const CATEGORY_MAP: Record<string, { id: string, label: string, icon: string }[]> = {
-  FAMILY: [
-    { id: 'All', label: 'All Items', icon: 'dashboard' },
-    { id: 'Nikki', label: 'Nikki', icon: 'favorite' },
-    { id: 'Brennan', label: 'Brennan', icon: 'sports_soccer' },
-    { id: 'Cullen', label: 'Cullen', icon: 'school' },
-    { id: 'Tyler', label: 'Tyler', icon: 'history_edu' },
-    { id: 'Ian', label: 'Ian', icon: 'golf_course' },
+    { id: 'outline', name: 'Keynote Outline Example', type: 'DOCX LABEL', size: 'DEMO', modified: 'Sample', icon: 'description', category: 'Drafts', description: 'Static metadata showing how a presentation outline could appear.' },
+    { id: 'workshop', name: 'Workshop Notes Example', type: 'PDF LABEL', size: 'DEMO', modified: 'Sample', icon: 'groups', category: 'Notes', description: 'Static metadata showing how workshop notes could appear.' },
+    { id: 'schedule', name: 'Speaking Schedule Example', type: 'CAL LABEL', size: 'DEMO', modified: 'Sample', icon: 'calendar_month', category: 'Planning', description: 'Static metadata showing how a schedule record could appear.' },
+    { id: 'contract-list', name: 'Contract Checklist Example', type: 'NOTE LABEL', size: 'DEMO', modified: 'Sample', icon: 'fact_check', category: 'Planning', description: 'Static metadata only. No legal agreement is stored.' },
+    { id: 'research', name: 'Research Notes Example', type: 'TXT LABEL', size: 'DEMO', modified: 'Sample', icon: 'science', category: 'Notes', description: 'Static metadata showing how research notes could appear.' },
+    { id: 'draft-index', name: 'Draft Index Example', type: 'TABLE LABEL', size: 'DEMO', modified: 'Sample', icon: 'table_chart', category: 'Drafts', description: 'Static metadata showing how a draft index could appear.' },
   ],
-  ADULT: [
-    { id: 'All', label: 'All Items', icon: 'dashboard' },
-    { id: 'Author', label: 'Author', icon: 'book_2' },
-    { id: 'Consulting', label: 'Consulting', icon: 'psychology' },
-    { id: 'Speaker', label: 'Speaker', icon: 'present_to_all' },
-    { id: 'Legal', label: 'Legal/Finance', icon: 'policy' },
-  ]
 };
 
 const VaultDetail: React.FC<VaultDetailProps> = ({ tier }) => {
   const navigate = useNavigate();
-  const [isVerified, setIsVerified] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeItem, setActiveItem] = useState<VaultItem | null>(null);
-  const isAdult = tier === 'ADULT';
-
-  const categories = CATEGORY_MAP[tier];
+  const title = tier === 'ADULT' ? 'Work Samples' : 'Family Samples';
+  const categories = ['All', ...new Set(VAULT_DATA[tier].map((item) => item.category))];
 
   const filteredItems = useMemo(() => {
-    let data = VAULT_DATA[tier] || [];
-    
-    if (selectedCategory !== 'All') {
-      data = data.filter(item => item.category === selectedCategory);
-    }
-    
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      data = data.filter(item => 
-        item.name.toLowerCase().includes(q) || 
-        item.description?.toLowerCase().includes(q)
-      );
-    }
-    
-    return data;
+    const query = searchQuery.trim().toLowerCase();
+    return VAULT_DATA[tier].filter((item) => {
+      const categoryMatches = selectedCategory === 'All' || item.category === selectedCategory;
+      const queryMatches = !query || `${item.name} ${item.description} ${item.category}`.toLowerCase().includes(query);
+      return categoryMatches && queryMatches;
+    });
   }, [tier, selectedCategory, searchQuery]);
 
-  const recentItems = filteredItems.slice(0, 4);
-  const fileItems = filteredItems.slice(4);
-
-  if (!isVerified) {
-    return (
-      <BiometricAuth 
-        onSuccess={() => setIsVerified(true)} 
-        onCancel={() => navigate('/')} 
-        title={`Accessing ${isAdult ? 'Professional' : 'Family'} Vault`}
-        subtitle={`Facial verification required. Please authorize camera scanner to verify Level ${isAdult ? '2' : '1'} decryption keys.`}
-      />
-    );
-  }
-
   return (
-    <div className="flex flex-col h-full bg-background-dark min-h-screen animate-in fade-in duration-500">
-      <header className="sticky top-0 z-50 flex items-center justify-between p-4 bg-background-dark/95 backdrop-blur-xl border-b border-white/5">
-        <button 
-          onClick={() => navigate('/')} 
-          className="flex items-center justify-center w-11 h-11 rounded-2xl bg-card-dark border border-slate-800 hover:bg-slate-800 transition-all active:scale-90"
-        >
-          <span className="material-symbols-outlined text-white">arrow_back_ios_new</span>
-        </button>
-        <div className="flex flex-col items-center">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-black uppercase tracking-tight">{isAdult ? 'Prof Vault' : 'Family Vault'}</h1>
-            <span className={`material-symbols-outlined text-[18px] ${isAdult ? 'text-primary' : 'text-emerald-500'} animate-pulse`}>
-              {isAdult ? 'psychology' : 'groups'}
-            </span>
-          </div>
-          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Secure Moore-Access Directory</p>
-        </div>
-        <button 
-          onClick={() => navigate('/settings')}
-          className="flex items-center justify-center w-11 h-11 rounded-2xl bg-card-dark border border-slate-800 hover:bg-slate-800 transition-all"
-        >
-          <span className="material-symbols-outlined">settings</span>
-        </button>
+    <div className="min-h-screen bg-background-dark pb-28 text-slate-300">
+      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-[#2A2A2A] bg-background-dark/95 p-4 backdrop-blur-xl">
+        <button onClick={() => navigate('/')} className="grid size-10 place-items-center border border-[#2A2A2A] bg-[#141414] text-white" aria-label="Return home"><ArrowLeft className="size-4" /></button>
+        <div className="text-center"><p className="font-mono text-[8px] font-semibold uppercase tracking-[0.2em] text-primary">Static interface data</p><h1 className="font-display text-2xl uppercase tracking-wider text-white">{title}</h1></div>
+        <button onClick={() => navigate('/settings')} className="grid size-10 place-items-center border border-[#2A2A2A] bg-[#141414] text-slate-400" aria-label="Open settings"><Settings className="size-4" /></button>
       </header>
 
-      <div className="p-4 space-y-6">
-        <div className="flex w-full items-center rounded-2xl bg-card-dark border border-slate-800 h-14 px-4 gap-3 group transition-all focus-within:border-primary/50">
-          <span className="material-symbols-outlined text-slate-500">search</span>
-          <input 
-            className="flex-1 bg-transparent border-none text-sm font-medium text-white placeholder-slate-600 focus:ring-0" 
-            placeholder="Search Dr. Moore's files..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <main className="space-y-6 p-4">
+        <section className="flex gap-3 border border-primary/30 bg-primary/5 p-4"><FileWarning className="mt-0.5 size-5 shrink-0 text-primary" /><p className="text-[10px] leading-relaxed text-slate-400">Every record on this screen is hard-coded sample metadata. No file exists behind these cards, and no content is uploaded, encrypted, or backed up.</p></section>
+
+        <label className="flex h-12 items-center gap-3 border border-[#2A2A2A] bg-[#141414] px-4"><Search className="size-4 text-slate-600" /><span className="sr-only">Search sample records</span><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={`Search ${title.toLowerCase()}…`} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-white placeholder:text-slate-700 focus:ring-0" /></label>
+
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {categories.map((category) => <button key={category} type="button" onClick={() => setSelectedCategory(category)} className={`h-9 shrink-0 border px-4 text-[9px] font-black uppercase tracking-wider ${selectedCategory === category ? 'border-primary bg-primary text-black' : 'border-[#2A2A2A] bg-[#141414] text-slate-500'}`}>{category}</button>)}
         </div>
 
-        {/* Category Filter Pills */}
-        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`flex items-center gap-2 px-4 h-10 rounded-xl border transition-all whitespace-nowrap text-xs font-bold uppercase tracking-wider ${
-                selectedCategory === cat.id 
-                ? 'bg-primary border-primary text-white' 
-                : 'bg-slate-900 border-slate-800 text-slate-500'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">{cat.icon}</span>
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Priority Objects ({filteredItems.length})</h3>
-          
-          {recentItems.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4">
-              {recentItems.map((item) => (
-                <div key={item.id} onClick={() => setActiveItem(item)} className="bg-card-dark rounded-3xl border border-slate-800 overflow-hidden shadow-xl hover:border-primary/50 transition-all cursor-pointer active:scale-95 group">
-                  <div className="h-32 w-full bg-slate-900 flex items-center justify-center relative">
-                    {item.preview ? (
-                      <img src={item.preview} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt="" />
-                    ) : (
-                      <span className="material-symbols-outlined text-5xl text-slate-700">{item.icon}</span>
-                    )}
-                    {item.security === 'Top Secret' && (
-                      <div className="absolute top-2 right-2 p-1.5 bg-rose-500/20 rounded-lg backdrop-blur-md">
-                        <span className="material-symbols-outlined text-[14px] text-rose-500">lock</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <h4 className="font-black text-[11px] text-white truncate leading-tight">{item.name}</h4>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="text-[8px] font-black uppercase text-slate-500 bg-slate-800/50 px-2 py-0.5 rounded border border-slate-700/50">{item.type}</span>
-                      <span className="text-[9px] font-bold text-slate-600">{item.size}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-20 flex flex-col items-center justify-center text-slate-600 space-y-3">
-              <span className="material-symbols-outlined text-6xl">find_in_page</span>
-              <p className="font-black text-[10px] uppercase tracking-widest">No matching tactical assets</p>
-            </div>
-          )}
-        </div>
-
-        {fileItems.length > 0 && (
-          <div className="space-y-4 pb-24">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Archive Items</h3>
-            <div className="space-y-3">
-              {fileItems.map((file) => (
-                <div key={file.id} onClick={() => setActiveItem(file)} className="flex items-center gap-4 p-4 rounded-3xl bg-card-dark border border-slate-800 hover:bg-slate-800/50 transition-all cursor-pointer group active:scale-[0.98]">
-                  <div className="size-12 flex items-center justify-center rounded-2xl bg-slate-900 border border-slate-800 text-primary">
-                    <span className="material-symbols-outlined">{file.icon}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black text-white truncate tracking-wide">{file.name}</p>
-                    <p className="text-[10px] font-bold text-slate-500">{file.category} • {file.size}</p>
-                  </div>
-                  <span className="material-symbols-outlined text-slate-600 group-hover:text-primary transition-colors">visibility</span>
-                </div>
-              ))}
-            </div>
+        <section className="space-y-3">
+          <div className="flex items-center justify-between"><h2 className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-slate-500">Sample Records</h2><span className="font-mono text-[8px] text-slate-700">{filteredItems.length} shown</span></div>
+          <div className="grid grid-cols-2 gap-3">
+            {filteredItems.map((item) => (
+              <button key={item.id} type="button" onClick={() => setActiveItem(item)} className="overflow-hidden border border-[#2A2A2A] bg-[#141414] text-left hover:border-primary">
+                <span className="grid h-28 place-items-center border-b border-[#2A2A2A] bg-[linear-gradient(135deg,#1E1E1E,#0D0D0D)]"><span className="material-symbols-outlined text-4xl text-primary/70">{item.icon}</span></span>
+                <span className="block p-4"><strong className="block truncate text-[10px] text-white">{item.name}</strong><span className="mt-2 flex justify-between font-mono text-[7px] uppercase text-slate-600"><span>{item.type}</span><span>{item.category}</span></span></span>
+              </button>
+            ))}
           </div>
-        )}
-      </div>
+          {filteredItems.length === 0 && <p className="border border-dashed border-[#2A2A2A] p-10 text-center text-[10px] text-slate-600">No sample records match.</p>}
+        </section>
+      </main>
 
       {activeItem && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-background-dark animate-in slide-in-from-bottom-full duration-500">
-          <header className="flex items-center justify-between p-4 border-b border-white/5">
-            <button onClick={() => setActiveItem(null)} className="size-10 flex items-center justify-center rounded-xl bg-card-dark border border-slate-800"><span className="material-symbols-outlined">close</span></button>
-            <h4 className="text-sm font-black uppercase tracking-widest truncate max-w-[200px]">{activeItem.name}</h4>
-            <div className="w-10"></div>
-          </header>
-          <main className="flex-1 overflow-y-auto p-6 space-y-8">
-            <div className="aspect-[4/3] rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center shadow-2xl">
-              {activeItem.preview ? <img src={activeItem.preview} className="w-full h-full object-cover" alt="" /> : <span className="material-symbols-outlined text-8xl text-slate-700">{activeItem.icon}</span>}
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Moore-Vault Metadata</h3>
-                {activeItem.security && (
-                  <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                    activeItem.security === 'Top Secret' ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' : 'bg-primary/10 border-primary/20 text-primary'
-                  }`}>
-                    {activeItem.security}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-slate-300 leading-relaxed font-medium">{activeItem.description}</p>
-              
-              <div className="grid grid-cols-2 gap-4 pt-4">
-                <div className="p-4 bg-card-dark rounded-2xl border border-slate-800">
-                  <span className="text-[8px] font-black text-slate-500 uppercase block mb-1">Modified</span>
-                  <span className="text-xs font-bold text-white">{activeItem.modified}</span>
-                </div>
-                <div className="p-4 bg-card-dark rounded-2xl border border-slate-800">
-                  <span className="text-[8px] font-black text-slate-500 uppercase block mb-1">Size</span>
-                  <span className="text-xs font-bold text-white">{activeItem.size}</span>
-                </div>
-              </div>
-            </div>
-          </main>
-          <footer className="p-6 border-t border-white/5 grid grid-cols-2 gap-4 bg-background-dark/80 backdrop-blur-md">
-            <button className="h-14 rounded-2xl bg-slate-800 font-black uppercase text-[10px] tracking-widest text-white active:scale-95 transition-all">Export Doc</button>
-            <button className="h-14 rounded-2xl bg-primary font-black uppercase text-[10px] tracking-widest text-white shadow-xl active:scale-95 transition-all">Secure Open</button>
-          </footer>
+        <div className="fixed inset-0 z-[200] overflow-y-auto bg-[#0D0D0D] p-6">
+          <div className="mx-auto flex min-h-full max-w-md flex-col justify-center gap-5">
+            <div className="flex items-start justify-between border-b border-[#2A2A2A] pb-4"><div><p className="font-mono text-[8px] uppercase tracking-wider text-primary">Sample metadata</p><h2 className="mt-2 font-display text-3xl uppercase tracking-wide text-white">{activeItem.name}</h2></div><button onClick={() => setActiveItem(null)} className="grid size-10 shrink-0 place-items-center border border-[#2A2A2A] bg-[#141414]" aria-label="Close sample record"><X className="size-4" /></button></div>
+            <div className="grid aspect-[4/3] place-items-center border border-[#2A2A2A] bg-[linear-gradient(135deg,#1E1E1E,#0D0D0D)]"><span className="material-symbols-outlined text-7xl text-primary/70">{activeItem.icon}</span></div>
+            <p className="text-sm leading-relaxed text-slate-300">{activeItem.description}</p>
+            <dl className="grid grid-cols-3 gap-px border border-[#2A2A2A] bg-[#2A2A2A] font-mono text-[8px]"><div className="bg-[#141414] p-3"><dt className="text-slate-600">TYPE</dt><dd className="mt-1 text-slate-300">{activeItem.type}</dd></div><div className="bg-[#141414] p-3"><dt className="text-slate-600">SIZE</dt><dd className="mt-1 text-slate-300">{activeItem.size}</dd></div><div className="bg-[#141414] p-3"><dt className="text-slate-600">STATE</dt><dd className="mt-1 text-slate-300">{activeItem.modified}</dd></div></dl>
+            <button type="button" onClick={() => setActiveItem(null)} className="h-12 bg-primary text-[10px] font-black uppercase tracking-[0.16em] text-black">Return to samples</button>
+          </div>
         </div>
       )}
     </div>
