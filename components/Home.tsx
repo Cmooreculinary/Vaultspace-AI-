@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GoogleGenAI } from "@google/genai";
 import EncryptionIndicator from './EncryptionIndicator';
 import DocumentStats from './DocumentStats';
 import CloudSyncIndicator from './CloudSyncIndicator';
@@ -39,35 +38,16 @@ const Home: React.FC = () => {
     else navigate('/alert');
   };
 
-  const runTestIngestion = async () => {
+  const runTestIngestion = () => {
     setIsProcessing(true);
     setIngestionResult(null);
-    
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const testEmail = `
-        From: principal-director@secure-consulting-node.com
-        Subject: Urgent: Performance Assessment - ${profile.name} & Analytics Report
-        Hi ${profile.name.split(' ')[0]}, 
-        We have the latest system diagnostic data for the high-performance team squad. Can you analyze 
-        the organizational dynamics and provide your specialized assessment? Also, please file the new 
-        clip into the family archive for secure review.
-      `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Analyze this email for a consulting expert named ${profile.name} (Role: ${profile.role}). 
-        Extract key action items and suggest 2 tasks for the VaultSpace app.
-        Keep it brief, tactical, and professional.`,
-      });
-
-      setIngestionResult(response.text || "Ingestion complete. Items sorted.");
-    } catch (error) {
-      console.error("AI Processing Error:", error);
-      setIngestionResult("Error: Secure connection to Maestro AI failed. Using local backup categorization.");
-    } finally {
+    window.setTimeout(() => {
+      setIngestionResult(
+        `Local demo complete for ${profile.name}. Suggested tasks: review the performance request and file the family attachment for later review. No document or secret left this browser.`
+      );
       setIsProcessing(false);
-    }
+    }, 450);
   };
 
   return (
