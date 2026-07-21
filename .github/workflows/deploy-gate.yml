@@ -1,0 +1,29 @@
+name: Deploy Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: test -f dist/index.html
+      - name: Confirm no AI secret was bundled
+        run: |
+          if grep -R --line-number --fixed-strings 'GEMINI_API_KEY' dist; then
+            echo 'Browser bundle contains a server secret reference.' >&2
+            exit 1
+          fi
