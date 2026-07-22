@@ -2,12 +2,12 @@ services:
   - type: web
     name: Vaultspace-AI
     runtime: static
-    buildCommand: npm ci && npm run check
+    buildCommand: npm ci --include=dev && npm run check
     staticPublishPath: ./dist
     autoDeployTrigger: commit
     envVars:
       - key: NODE_VERSION
-        value: "22.22.0"
+        value: "22"
     headers:
       - path: /*
         name: X-Content-Type-Options
