@@ -31,6 +31,20 @@ npm run preview
 
 The GitHub deploy gate repeats the same checks and rejects browser bundles containing a server-secret reference or unsupported encryption/compliance claims.
 
+### Render service settings
+
+The blueprint in `render.yaml` only applies when the service was created from the Blueprint (New → Blueprint). A service created directly from the dashboard ignores it and must match these settings manually:
+
+- **Static Site** — Build command `npm ci --include=dev && npm run check`, publish directory `dist`, rewrite rule `/*` → `/index.html`.
+- **Web Service (Node)** — Build command `npm ci --include=dev && npm run check`, start command `npm start`. The bundled `scripts/server.mjs` serves `dist` on `$PORT` with the same headers and SPA fallback, so this configuration also deploys cleanly.
+
+### If a Render deploy fails
+
+- `vite: not found` or `tsc: not found` during build: a `NODE_ENV=production` environment variable is skipping dev dependencies. Remove it, or keep the `--include=dev` flag in the build command.
+- `No open ports detected`: the service is a Web Service without a start command. Set the start command to `npm start` (or recreate the service as a Static Site).
+- Blank page after deploy: the publish directory is not `dist`, or the `/*` → `/index.html` rewrite rule is missing.
+- Stale or inconsistent output: use **Manual Deploy → Clear build cache & deploy**.
+
 ## Production boundary
 
 A production VaultSpace requires an approved architecture for backend identity, authentication, authorization, encrypted transport and storage, key management, durable storage, recovery, audit integrity, monitoring, privacy, threat modeling, and independent security review.
